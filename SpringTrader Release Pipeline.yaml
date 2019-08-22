@@ -1,0 +1,191 @@
+---
+project: trading
+kind: PIPELINE
+name: SpringTrader Release Pipeline
+enabled: true
+description: My First Pipeline
+concurrency: 10
+input:
+  Cloud: cloud:public
+  CNAME: springtrader
+  Nodes: '1'
+ciWorkspace:
+  image: ''
+  path: ''
+  cache:
+  - ''
+  endpoint: ''
+stageOrder:
+- Build
+- Deployment
+- Functional Testing
+- Performance Testing
+- Review and Destroy
+stages:
+  Performance Testing:
+    taskOrder:
+    - Concurent User Testing
+    tasks:
+      Concurent User Testing:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-performance-testing
+          parameters: {
+            serverIp: '${Deployment.Springtrader.output.deploymentDetails.resources.NanotraderLB.address}',
+            threadgroupRamp: '10',
+            threadgroupNumber: '1000'
+          }
+  Review and Destroy:
+    taskOrder:
+    - Manual Approval
+    - Destroy Deployment,Remove CNAME
+    tasks:
+      Remove CNAME:
+        type: SSH
+        ignoreFailure: false
+        preCondition: ${input.Cloud} == "cloud:public"
+        endpoints:
+          agent: Agent
+        input:
+          privatekey: ''
+          password: s2enc~QLJhR9ZEpy6UAgaHLj+mGA==
+          workingDirectory: ''
+          environmentVariables: {
+            cname: '${input.CNAME}',
+            target: '${Deployment.Springtrader.output.deploymentDetails.resources.NanotraderLB.address}',
+            zoneID: Z22RH8VNFULA6B,
+            zoneName: virtualantipodeans.com
+          }
+          host: jenkins.slatchdev.local
+          arguments: [
+            ]
+          passphrase: ''
+          script: ' aws route53 change-resource-record-sets --hosted-zone-id $zoneID --cli-input-json
+            ''{ "ChangeBatch": {"Comment": "Update record from Code Stream", "Changes": [ { "Action":
+            "DELETE", "ResourceRecordSet": { "Name": "''$cname.$zoneName''", "Type": "CNAME", "TTL": 3600,
+            "ResourceRecords": [ { "Value": "''$target''" } ] } } ] }}'''
+          username: root
+      Manual Approval:
+        type: UserOperation
+        ignoreFailure: false
+        preCondition: ''
+        input:
+          summary: Approval of SpringTrader Pipeline
+          pipelineName: ${name}
+          approvers: [
+            cslater@vmware.com]
+          description: Please Approve this pipeline
+          sendemail: false
+      Destroy Deployment:
+        type: Blueprint
+        ignoreFailure: false
+        preCondition: ''
+        input:
+          _deploymentFlag: false
+          action: DeleteDeployment
+          deploymentName: ${Deployment.Springtrader.output.deploymentName}
+  Build:
+    taskOrder:
+    - Build
+    tasks:
+      Build:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-build
+          parameters: {
+            }
+  Deployment:
+    taskOrder:
+    - Springtrader
+    - Create CNAME
+    tasks:
+      Create CNAME:
+        type: SSH
+        ignoreFailure: false
+        preCondition: ${input.Cloud} == "cloud:public"
+        endpoints:
+          agent: Agent
+        input:
+          privatekey: ''
+          password: s2enc~QLJhR9ZEpy6UAgaHLj+mGA==
+          workingDirectory: ''
+          environmentVariables: {
+            cname: '${input.CNAME}',
+            target: '${Deployment.Springtrader.output.deploymentDetails.resources.NanotraderLB.address}',
+            zoneID: Z22RH8VNFULA6B,
+            zoneName: virtualantipodeans.com
+          }
+          host: jenkins.slatchdev.local
+          arguments: [
+            ]
+          passphrase: ''
+          script: ' aws route53 change-resource-record-sets --hosted-zone-id $zoneID --cli-input-json
+            ''{ "ChangeBatch": {"Comment": "Update record from Code Stream", "Changes": [ { "Action":
+            "CREATE", "ResourceRecordSet": { "Name": "''$cname.$zoneName''", "Type": "CNAME", "TTL": 3600,
+            "ResourceRecords": [ { "Value": "''$target''" } ] } } ] }}'''
+          username: root
+      Springtrader:
+        type: Blueprint
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          gitServer: git
+        input:
+          filepath: SpringTrader.yaml
+          action: CreateDeployment
+          deploymentName: ''
+          parameters: {
+            CloudType: '${input.Cloud}',
+            NumberOfAppNodes: '${input.Nodes}',
+            SpringTraderWARPackage: 'https://artifactory.slatchdev.local/artifactory/nanotrader-cd/spring-nanotrader-web-1.0.1.BUILD-SNAPSHOT.war'
+          }
+  Functional Testing:
+    taskOrder:
+    - HomePageTesting
+    - LoginTesting
+    - TradingTesting
+    tasks:
+      LoginTesting:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-login-testing
+          parameters: {
+            homePage: 'http://${Deployment.Springtrader.output.deploymentDetails.resources.NanotraderLB.address}:8080/spring-nanotrader-web/',
+            titleText: SpringTrader
+          }
+      HomePageTesting:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-basic-testing
+          parameters: {
+            homePage: 'http://${Deployment.Springtrader.output.deploymentDetails.resources.NanotraderLB.address}:8080/spring-nanotrader-web/',
+            titleText: SpringTrader
+          }
+      TradingTesting:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-sharetrading-testing
+          parameters: {
+            homePage: 'http://${Deployment.Springtrader.output.deploymentDetails.resources.NanotraderLB.address}:8080/spring-nanotrader-web/',
+            titleText: SpringTrader
+          }

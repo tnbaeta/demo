@@ -1,0 +1,132 @@
+---
+project: trading
+kind: PIPELINE
+name: SpringTrader Release Pipeline
+enabled: true
+concurrency: 10
+ciWorkspace:
+  image: ''
+  path: ''
+  cache:
+  - ''
+  endpoint: ''
+stageOrder:
+- Build
+- Deployment
+- Functional Testing
+- Performance Testing
+- Review and Destroy
+stages:
+  Performance Testing:
+    taskOrder:
+    - Concurent User Testing
+    tasks:
+      Concurent User Testing:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-performance-testing
+          parameters: {
+            serverIp: '${Deployment.Springtrader.output.deploymentDetails.resources.TcServer.address}',
+            threadgroupRamp: '10',
+            threadgroupNumber: '1000'
+          }
+  Review and Destroy:
+    taskOrder:
+    - Manual Approval
+    - Destroy Deployment
+    tasks:
+      Manual Approval:
+        type: UserOperation
+        ignoreFailure: false
+        preCondition: ''
+        input:
+          summary: Please Review Deployment
+          pipelineName: ${name}
+          approvers: [
+            cslater@vmware.com]
+          description: ''
+          sendemail: false
+      Destroy Deployment:
+        type: Blueprint
+        ignoreFailure: false
+        preCondition: ''
+        input:
+          _deploymentFlag: false
+          action: DeleteDeployment
+          deploymentName: ${Deployment.Springtrader.output.deploymentName}
+  Build:
+    taskOrder:
+    - Build
+    tasks:
+      Build:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-build
+          parameters: {
+            }
+  Deployment:
+    taskOrder:
+    - Springtrader
+    tasks:
+      Springtrader:
+        type: Blueprint
+        ignoreFailure: false
+        preCondition: ''
+        input:
+          blueprint: Springtrader
+          action: CreateDeployment
+          deploymentName: ''
+          parameters: {
+            NumberOfWebNodes: '1',
+            SpringTraderWARPackage: 'http://artifactory.corp.local:28081/artifactory/nanotrader-cd/spring-nanotrader-web-1.0.1.BUILD-SNAPSHOT.war'
+          }
+  Functional Testing:
+    taskOrder:
+    - HomePageTesting
+    - LoginTesting
+    - TradingTesting
+    tasks:
+      LoginTesting:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-login-testing
+          parameters: {
+            homePage: 'http://${Deployment.Springtrader.output.deploymentDetails.resources.TcServer.address}:8080/spring-nanotrader-web/',
+            titleText: SpringTrader
+          }
+      HomePageTesting:
+        type: Jenkins
+        ignoreFailure: true
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-basic-testing
+          parameters: {
+            homePage: 'http://${Deployment.Springtrader.output.deploymentDetails.resources.TcServer.address}:8080/spring-nanotrader-web/',
+            titleText: SpringTrader
+          }
+      TradingTesting:
+        type: Jenkins
+        ignoreFailure: false
+        preCondition: ''
+        endpoints:
+          jenkinsServer: jenkins
+        input:
+          job: Springtrader-sharetrading-testing
+          parameters: {
+            homePage: 'http://${Deployment.Springtrader.output.deploymentDetails.resources.TcServer.address}:8080/spring-nanotrader-web/',
+            titleText: SpringTrader
+          }

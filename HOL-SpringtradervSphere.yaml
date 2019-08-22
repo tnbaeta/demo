@@ -1,0 +1,138 @@
+name: SpringtradervSphere
+iteration: 1
+description: Springtrader 4-Tier Application on vSphere
+inputs:
+  NumberOfAppNodes:
+    type: integer
+    minimum: 1
+    default: 1
+    maximum: 5
+    title: Number of Tomcat Web Nodes
+    description: Number of Tomcat Web Nodes
+  SpringTraderWARPackage:
+    type: string
+    default: >-
+      http://gitlab.rainpole.com:28081/artifactory/binrepo/springtrader/spring-nanotrader-web-1.0.1.war
+    title: SpringTrader WAR File Application Location
+    description: SpringTrader WAR File Application Location
+resources:
+  net-web:
+    type: Cloud.Network
+    properties:
+      name: net-web
+      networkType: existing
+      constraints:
+        - tag: private
+  TcServer:
+    type: Cloud.vSphere.Machine
+    dependsOn:
+      - SQLFireServer
+      - MessageBus
+    properties:
+      flavor: small
+      count: '${input.NumberOfAppNodes}'
+      image: CentOS6x32
+      storage: null
+      cloudConfig: |
+        #cloud-config
+        hostname: tcserver.lab.local
+        repo_update: true
+        repo_upgrade: all
+        packages:
+         - git
+        runcmd:
+         - git clone http://gitlab.rainpole.com:82/root/cloud-assembly-springtrader.git /tmp/scripts
+         - chmod u+x /tmp/scripts/vFabric_tc_Server/*
+         - echo "$(hostname -I) tcserver.lab.local tcserver" >> /etc/hosts
+         - export db_ip=${SQLFireLocator.address}
+         - export rabbitmq_node_ip=${MessageBus.address}
+         - export war_file=${input.SpringTraderWARPackage}
+         - /tmp/scripts/vFabric_tc_Server/install.sh > /tmp/scripts/vFabric_tc_Server/install.log
+         - /tmp/scripts/vFabric_tc_Server/configure.sh > /tmp/scripts/vFabric_tc_Server/configure.log
+         - /tmp/scripts/vFabric_tc_Server/start.sh > /tmp/scripts/vFabric_tc_Server/start.log
+         - /tmp/scripts/vFabric_tc_Server/deploy-asynch-services.sh > /tmp/scripts/vFabric_tc_Server/deploy-asynch-services.log
+         - /tmp/scripts/vFabric_tc_Server/deploy-nanotrader-services.sh > /tmp/scripts/vFabric_tc_Server/deploy-nanotrader-services.log
+         - /tmp/scripts/vFabric_tc_Server/deploy-nanotrader-web.sh > /tmp/scripts/vFabric_tc_Server/deploy-nanotrader-web.log
+      networks:
+        - name: '${net-web.name}'
+  MessageBus:
+    type: Cloud.vSphere.Machine
+    properties:
+      flavor: small
+      image: CentOS6x32
+      storage: null
+      cloudConfig: |
+        #cloud-config
+        hostname: rabbitmq.lab.local
+        repo_update: true
+        repo_upgrade: all
+        packages:
+         - git
+        runcmd:
+         - git clone http://gitlab.rainpole.com:82/root/cloud-assembly-springtrader.git /tmp/scripts
+         - chmod u+x /tmp/scripts/vFabric_RabbitMQ/*
+         - /tmp/scripts/vFabric_RabbitMQ/install.sh > /tmp/scripts/vFabric_RabbitMQ/install.log
+      attachedDisks: []
+      networks:
+        - name: '${net-app.name}'
+  SQLFireServer:
+    type: Cloud.vSphere.Machine
+    dependsOn:
+      - SQLFireLocator
+    properties:
+      flavor: small
+      image: CentOS6x32
+      storage: null
+      cloudConfig: |
+        #cloud-config
+        hostname: sqlfireserver.lab.local
+        repo_update: true
+        repo_upgrade: all
+        packages:
+         - git
+        runcmd:
+         - git clone http://gitlab.rainpole.com:82/root/cloud-assembly-springtrader.git /tmp/scripts
+         - chmod u+x /tmp/scripts/vFabric_SQLFireServer/*
+         - echo "$(hostname -I) sqlfireserver.lab.local sqlfireserver" >> /etc/hosts
+         - export locator_ip=${SQLFireLocator.address}
+         - /tmp/scripts/vFabric_SQLFireServer/install.sh > /tmp/scripts/vFabric_SQLFireServer/install.log
+         - /tmp/scripts/vFabric_SQLFireServer/start.sh > /tmp/scripts/vFabric_SQLFireServer/start.log
+      attachedDisks: []
+      networks:
+        - name: '${net-db.name}'
+  SQLFireLocator:
+    type: Cloud.vSphere.Machine
+    properties:
+      flavor: small
+      image: CentOS6x32
+      storage: null
+      cloudConfig: |
+        #cloud-config
+        hostname: sqlfirelocator.lab.local
+        repo_update: true
+        repo_upgrade: all
+        packages:
+         - git
+        runcmd:
+         - git clone http://gitlab.rainpole.com:82/root/cloud-assembly-springtrader.git /tmp/scripts
+         - chmod u+x /tmp/scripts/vFabric_SQLFireLocator/*
+         - echo "$(hostname -I) sqlfirelocator.lab.local sqlfirelocator" >> /etc/hosts
+         - /tmp/scripts/vFabric_SQLFireLocator/install.sh > /tmp/scripts/vFabric_SQLFireLocator/install.log
+         - /tmp/scripts/vFabric_SQLFireLocator/start.sh > /tmp/scripts/vFabric_SQLFireLocator/start.log
+      attachedDisks: []
+      networks:
+        - name: '${net-db.name}'
+  net-app:
+    type: Cloud.Network
+    properties:
+      name: net-app
+      networkType: existing
+      constraints:
+        - tag: private
+  net-db:
+    type: Cloud.Network
+    properties:
+      name: net-db
+      networkType: existing
+      constraints:
+        - tag: private

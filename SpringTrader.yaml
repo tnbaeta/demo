@@ -1,0 +1,204 @@
+name: Springtrader
+iteration: 1
+description: Springtrader 4-Tier Application
+inputs:
+  CloudType:
+    type: string
+    default: cloud:public
+    title: Cloud for Deployment
+    description: Select which cloud environment will be used
+  NumberOfAppNodes:
+    type: integer
+    minimum: 1
+    default: 1
+    maximum: 5
+    title: Number of Tomcat Web Nodes
+    description: Number of Tomcat Web Nodes
+  SpringTraderWARPackage:
+    type: string
+    default: >-
+      https://artifactory.slatchdev.local/artifactory/binrepo/springtrader/spring-nanotrader-web-1.0.1.war
+    title: SpringTrader WAR File Application Location
+    description: SpringTrader WAR File Application Location
+resources:
+  net-lb:
+    type: Cloud.Network
+    properties:
+      name: net-lb
+      networkType: existing
+      constraints:
+        - tag: 'function:lb'
+  net-web:
+    type: Cloud.Network
+    properties:
+      name: net-web
+      networkType: existing
+      constraints:
+        - tag: 'function:web'
+  NanotraderLB:
+    type: Cloud.LoadBalancer
+    properties:
+      name: nanotraderlb
+      network: '${net-lb.name}'
+      instances:
+        - '${TcServer.id}'
+      internetFacing: true
+      routes:
+        - protocol: HTTP
+          port: '8080'
+          instanceProtocol: HTTP
+          instancePort: '8080'
+          healthCheckConfiguration:
+            protocol: HTTP
+            port: '8080'
+            urlPath: /
+            intervalSeconds: 60
+            timeoutSeconds: 5
+            unhealthyThreshold: 5
+            healthyThreshold: 2
+  TcServer:
+    type: Cloud.Machine
+    dependsOn:
+      - SQLFireServer
+      - MessageBus
+    properties:
+      flavor: small
+      count: '${input.NumberOfAppNodes}'
+      image: centos6
+      storage: null
+      cloudConfig: |
+        #cloud-config
+        hostname: tcserver.lab.local
+        users:
+        - name: slatch
+          ssh-authorized-keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCgCJj9tfF3AYcHN5IyyYUDimeiM3aCALRypMGSdC7AfKXVr0Pk+ZaAtgO+9f8palLPNZ36LAp/9m9rKb7Wf9vt82eajIAG43trYNzhe1ExBknj310nesrIl5Tc2NCJVBZtVxsOVRqWOPQdI6oIWXlQxfyq/MkIDwMc8E16xTTj+yH6yNxM4cFSQGaQJgFg8WRKnOECza8a8m7zX3XchO1m9CwzP2Q5ThAZZNdcmXShNvoou03aesch6q7DrvxrXQ642BRSUA4Ny6Z9xME/0XeWf27IxUzXciXIflkYCB/rSUVwaUwkHLM8DDyAXeyScF5oT2WZATdTaMwE5EIeniq1 titan_keypair
+          sudo: ['ALL=(ALL) NOPASSWD:ALL']
+          groups: sudo
+          shell: /bin/bash
+        runcmd:
+         - git clone https://gitlab.com/cloud-assembly-springtrader/demo.git /tmp/scripts
+         - chmod u+x /tmp/scripts/vFabric_tc_Server/*
+         - echo "$(hostname -I) tcserver.lab.local tcserver" >> /etc/hosts
+         - export db_ip=${SQLFireLocator.networks[0].address}
+         - export rabbitmq_node_ip=${MessageBus.networks[0].address}
+         - export war_file=${input.SpringTraderWARPackage}
+         - /tmp/scripts/vFabric_tc_Server/install.sh > /tmp/scripts/vFabric_tc_Server/install.log
+         - /tmp/scripts/vFabric_tc_Server/configure.sh > /tmp/scripts/vFabric_tc_Server/configure.log
+         - /tmp/scripts/vFabric_tc_Server/start.sh > /tmp/scripts/vFabric_tc_Server/start.log
+         - /tmp/scripts/vFabric_tc_Server/deploy-asynch-services.sh > /tmp/scripts/vFabric_tc_Server/deploy-asynch-services.log
+         - /tmp/scripts/vFabric_tc_Server/deploy-nanotrader-services.sh > /tmp/scripts/vFabric_tc_Server/deploy-nanotrader-services.log
+         - /tmp/scripts/vFabric_tc_Server/deploy-nanotrader-web.sh > /tmp/scripts/vFabric_tc_Server/deploy-nanotrader-web.log
+         - /tmp/scripts/vFabric_tc_Server/setup-wavefront-tcServer.sh > /tmp/scripts/vFabric_tc_Server/setup-wavefront-tcServer.log
+      networks:
+        - name: '${net-web.name}'
+          assignPublicIpAddress: false
+      remoteAccess:
+        sshKey: titan_keypair
+      constraints:
+        - tag: '${input.CloudType}'
+  MessageBus:
+    type: Cloud.Machine
+    properties:
+      flavor: small
+      image: centos6
+      storage: null
+      cloudConfig: |
+        #cloud-config
+        hostname: rabbitmq.lab.local
+        users:
+        - name: slatch
+          ssh-authorized-keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCgCJj9tfF3AYcHN5IyyYUDimeiM3aCALRypMGSdC7AfKXVr0Pk+ZaAtgO+9f8palLPNZ36LAp/9m9rKb7Wf9vt82eajIAG43trYNzhe1ExBknj310nesrIl5Tc2NCJVBZtVxsOVRqWOPQdI6oIWXlQxfyq/MkIDwMc8E16xTTj+yH6yNxM4cFSQGaQJgFg8WRKnOECza8a8m7zX3XchO1m9CwzP2Q5ThAZZNdcmXShNvoou03aesch6q7DrvxrXQ642BRSUA4Ny6Z9xME/0XeWf27IxUzXciXIflkYCB/rSUVwaUwkHLM8DDyAXeyScF5oT2WZATdTaMwE5EIeniq1 titan_keypair
+          sudo: ['ALL=(ALL) NOPASSWD:ALL']
+          groups: sudo
+          shell: /bin/bash
+        runcmd:
+         - git clone https://gitlab.com/cloud-assembly-springtrader/demo.git /tmp/scripts
+         - chmod u+x /tmp/scripts/vFabric_RabbitMQ/*
+         - /tmp/scripts/vFabric_RabbitMQ/install.sh > /tmp/scripts/vFabric_RabbitMQ/install.log
+      attachedDisks: []
+      networks:
+        - name: '${net-app.name}'
+          assignPublicIpAddress: false
+      remoteAccess:
+        sshKey: titan_keypair
+      constraints:
+        - tag: '${input.CloudType}'
+  SQLFireServer:
+    type: Cloud.Machine
+    dependsOn:
+      - SQLFireLocator
+    properties:
+      flavor: small
+      image: centos6
+      storage: null
+      cloudConfig: |
+        #cloud-config
+        hostname: sqlfireserver.lab.local
+        users:
+        - name: slatch
+          ssh-authorized-keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCgCJj9tfF3AYcHN5IyyYUDimeiM3aCALRypMGSdC7AfKXVr0Pk+ZaAtgO+9f8palLPNZ36LAp/9m9rKb7Wf9vt82eajIAG43trYNzhe1ExBknj310nesrIl5Tc2NCJVBZtVxsOVRqWOPQdI6oIWXlQxfyq/MkIDwMc8E16xTTj+yH6yNxM4cFSQGaQJgFg8WRKnOECza8a8m7zX3XchO1m9CwzP2Q5ThAZZNdcmXShNvoou03aesch6q7DrvxrXQ642BRSUA4Ny6Z9xME/0XeWf27IxUzXciXIflkYCB/rSUVwaUwkHLM8DDyAXeyScF5oT2WZATdTaMwE5EIeniq1 titan_keypair
+          sudo: ['ALL=(ALL) NOPASSWD:ALL']
+          groups: sudo
+          shell: /bin/bash
+        runcmd:
+         - git clone https://gitlab.com/cloud-assembly-springtrader/demo.git /tmp/scripts
+         - chmod u+x /tmp/scripts/vFabric_SQLFireServer/*
+         - echo "$(hostname -I) sqlfireserver.lab.local sqlfireserver" >> /etc/hosts
+         - export locator_ip=${SQLFireLocator.networks[0].address}
+         - /tmp/scripts/vFabric_SQLFireServer/install.sh > /tmp/scripts/vFabric_SQLFireServer/install.log
+         - /tmp/scripts/vFabric_SQLFireServer/start.sh > /tmp/scripts/vFabric_SQLFireServer/start.log
+      attachedDisks: []
+      networks:
+        - name: '${net-db.name}'
+          assignPublicIpAddress: false
+      remoteAccess:
+        sshKey: titan_keypair
+      constraints:
+        - tag: '${input.CloudType}'
+  SQLFireLocator:
+    type: Cloud.Machine
+    properties:
+      flavor: small
+      image: centos6
+      storage: null
+      cloudConfig: |
+        #cloud-config
+        hostname: sqlfirelocator.lab.local
+        users:
+        - name: slatch
+          ssh-authorized-keys:
+          - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCgCJj9tfF3AYcHN5IyyYUDimeiM3aCALRypMGSdC7AfKXVr0Pk+ZaAtgO+9f8palLPNZ36LAp/9m9rKb7Wf9vt82eajIAG43trYNzhe1ExBknj310nesrIl5Tc2NCJVBZtVxsOVRqWOPQdI6oIWXlQxfyq/MkIDwMc8E16xTTj+yH6yNxM4cFSQGaQJgFg8WRKnOECza8a8m7zX3XchO1m9CwzP2Q5ThAZZNdcmXShNvoou03aesch6q7DrvxrXQ642BRSUA4Ny6Z9xME/0XeWf27IxUzXciXIflkYCB/rSUVwaUwkHLM8DDyAXeyScF5oT2WZATdTaMwE5EIeniq1 titan_keypair
+          sudo: ['ALL=(ALL) NOPASSWD:ALL']
+          groups: sudo
+          shell: /bin/bash
+        runcmd:
+         - git clone https://gitlab.com/cloud-assembly-springtrader/demo.git /tmp/scripts
+         - chmod u+x /tmp/scripts/vFabric_SQLFireLocator/*
+         - echo "$(hostname -I) sqlfirelocator.lab.local sqlfirelocator" >> /etc/hosts
+         - /tmp/scripts/vFabric_SQLFireLocator/install.sh > /tmp/scripts/vFabric_SQLFireLocator/install.log
+         - /tmp/scripts/vFabric_SQLFireLocator/start.sh > /tmp/scripts/vFabric_SQLFireLocator/start.log
+      attachedDisks: []
+      networks:
+        - name: '${net-db.name}'
+          assignPublicIpAddress: false
+      remoteAccess:
+        sshKey: titan_keypair
+      constraints:
+        - tag: '${input.CloudType}'
+  net-app:
+    type: Cloud.Network
+    properties:
+      name: net-app
+      networkType: existing
+      constraints:
+        - tag: 'function:app'
+  net-db:
+    type: Cloud.Network
+    properties:
+      name: net-db
+      networkType: existing
+      constraints:
+        - tag: 'function:data'
